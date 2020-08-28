@@ -147,7 +147,6 @@
     (is eql T (castable:gethash (make-pathname :name "a") table))
     (is eql NIL (castable:gethash (make-pathname) table)))
   ;; EQUALP comparison
-  #+sbcl
   (let ((table (castable:make-castable :test 'equalp)))
     (is eql T (setf (castable:gethash #\a table) T))
     (is eql T (castable:gethash #\a table))
