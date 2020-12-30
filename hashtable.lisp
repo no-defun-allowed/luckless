@@ -20,7 +20,7 @@
     `(prime 'prime)))
 
 (defconstant max-spin 2)
-(defconstant reprobe-limit 10)
+(defconstant reprobe-limit 200)
 (defconstant min-size-log 3)
 (defconstant min-size (ash 1 min-size-log))
 (defconstant no-match-old 'no-match-old)
@@ -105,29 +105,31 @@
 (declaim (inline chm))
 (declaim (ftype (function (simple-vector) chm) chm))
 ;; L138, static CHM chm(Object[])
+(declaim (inline chm)
+         (ftype (function (simple-vector) chm) chm))
 (defun chm (kvs)
   (svref kvs 0))
 
-(declaim (inline hashes))
-(declaim (ftype (function (simple-vector) (simple-array fixnum)) hashes))
+(declaim (inline hashes)
+         (ftype (function (simple-vector) (simple-array fixnum)) hashes))
 ;; L139, static int[] hashes(Object[]) 
 (defun hashes (kvs)
   (svref kvs 1))
 
-(declaim (inline len))
-(declaim (ftype (function (simple-vector) (unsigned-byte 32)) len))
+(declaim (inline len)
+         (ftype (function (simple-vector) (unsigned-byte 32)) len))
 ;; L140, static int len(Object[])
 (defun len (kvs)
   (the (unsigned-byte 32) (ash (- (length kvs) 2) -1)))
 
-(declaim (inline key))
-(declaim (ftype (function (simple-vector (unsigned-byte 32)) T) key))
+(declaim (inline key)
+         (ftype (function (simple-vector (unsigned-byte 32)) T) key))
 ;; L175 static Object key(Object[], int)
 (defun key (kvs idx)
   (svref kvs (+ 2 (ash idx 1))))
 
-(declaim (inline val))
-(declaim (ftype (function (simple-vector (unsigned-byte 32)) T) val))
+(declaim (inline val)
+         (ftype (function (simple-vector (unsigned-byte 32)) T) val))
 ;; L176 static Object val(Object[], int)
 (defun val (kvs idx)
   (svref kvs (+ 3 (ash idx 1))))
@@ -264,10 +266,10 @@
 (declaim (inline keyeq))
 ;; L467 boolean keyeq(Object, Object, int[], int, int)
 (defun keyeq (k key hashes hash fullhash test)
-  (declare (type fixnum hash fullhash))
-  (declare (type (function (T T) boolean) test))
-  (declare (type (simple-array fixnum (*)) hashes))
-  (declare (optimize speed))
+  (declare (type fixnum hash fullhash)
+           (type (function (T T) boolean) test)
+           (type (simple-array fixnum (*)) hashes)
+           (optimize (speed 3) (debug 0) (safety 0)))
   (or (eq k key)
       ;; Key does not match exactly, so try more expensive comparison.
       (and ;; If the hash exists, does it match?
@@ -279,17 +281,17 @@
            (funcall test key k))))
 ;; L502 Object get_impl(NonBlockingHashMap, Object[], Object, int)
 (defun %gethash (table kvs key fullhash)
-  (declare (type castable table))
-  (declare (type simple-vector kvs))
-  (declare (type fixnum fullhash))
-  (declare (optimize speed))
+  (declare (type castable table)
+           (type simple-vector kvs)
+           (type fixnum fullhash)
+           (optimize (speed 3) (debug 0) (safety 0)))
   (let* ((len (len kvs))
          (chm (chm kvs))
          (hashes (hashes kvs))
          (idx (logand fullhash (1- len)))
          (test (%castable-test table))
-         (reprobe-cnt 0))
-    (declare (fixnum reprobe-cnt))
+         (reprobe-count 0))
+    (declare (fixnum reprobe-count))
     ;; Spin for a hit
     (loop (let ((k (key kvs idx))
                 (v (val kvs idx)))
@@ -309,7 +311,7 @@
                                    key
                                    fullhash)))
               ;; If we exceed reprobes, help resizing.
-              (when (or (<= (reprobe-limit len) (incf reprobe-cnt))
+              (when (or (<= (reprobe-limit len) (incf reprobe-count))
                         (eq key TOMBSTONE))
                 (if (null newkvs)
                     ;; Nothing here.
@@ -325,7 +327,7 @@
   (let* ((fullhash (hash table key))
          (value (%gethash table (%castable-kvs table) key fullhash)))
     ;; Make sure we never return primes
-    (check-type value (not prime))
+    (assert (not (prime-p value)))
     (if (eql value NO-VALUE)
         (values default NIL)
         (values value T))))
@@ -343,10 +345,11 @@
          (hashes (hashes kvs))
          (test (%castable-test table))
          (idx (logand fullhash (1- len)))
-         (reprobe-cnt 0)
+         (reprobe-count 0)
          (k NO-VALUE) (v NO-VALUE)
          (newkvs NIL))
-    (declare (type fixnum idx reprobe-cnt))
+    (declare (type fixnum idx reprobe-count)
+             (type chm chm))
     ;; Spin for a hit
     (loop (setf v (val kvs idx))
           (setf k (key kvs idx))
@@ -369,8 +372,7 @@
           (when (keyeq k key hashes idx fullhash test)
             (return))
           ;; If we exceed reprobes, start resizing
-          (when (or (<= (reprobe-limit len) (incf reprobe-cnt))
-                    (eq key TOMBSTONE))
+          (when (<= (reprobe-limit len) (incf reprobe-count))
             (setf newkvs (resize chm table kvs))
             (unless (eq exp NO-VALUE) (help-copy table newkvs))
             (return-from %put-if-match
@@ -384,7 +386,7 @@
     (when (and ;; Do we have a new table already?
                (null newkvs)
                ;; Check the value
-               (or (and (eq v NO-VALUE) (table-full-p chm reprobe-cnt len))
+               (or (and (eq v NO-VALUE) (table-full-p chm reprobe-count len))
                    (prime-p v)))
       (setf newkvs (resize chm table kvs)))
     ;; Check if we are indeed moving and retry
@@ -392,7 +394,7 @@
       (return-from %put-if-match
         (%put-if-match table (copy-slot-and-check chm table kvs idx exp) key put exp)))
     ;; Finally we can do the update
-    (loop (check-type v (not prime))
+    (loop (assert (not (prime-p v)))
           ;; If we don't match the old, bail out
           (when (and (not (eq exp NO-MATCH-OLD))
                      (not (eq v exp))
