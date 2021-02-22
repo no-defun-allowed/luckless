@@ -311,8 +311,7 @@
                                    key
                                    fullhash)))
               ;; If we exceed reprobes, help resizing.
-              (when (or (<= (reprobe-limit len) (incf reprobe-count))
-                        (eq key TOMBSTONE))
+              (when (<= (reprobe-limit len) (incf reprobe-count))
                 (if (null newkvs)
                     ;; Nothing here.
                     (return NO-VALUE)
