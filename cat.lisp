@@ -11,10 +11,6 @@
 
 (in-package #:org.shirakumo.luckless.hashtable)
 
-(defconstant global-hash (if (boundp 'global-hash)
-                             global-hash
-                             #.(sxhash (get-universal-time))))
-
 (defstruct (cat
             (:constructor %make-cat (next table))
             (:conc-name %cat-))
@@ -101,6 +97,16 @@
 (defun counter-value~ (counter)
   (cat-sum~ (%counter-cat counter) 0))
 
+(declaim (inline thread-hash))
+
+(defvar *thread-hash* (random (expt 2 32)))
+(push `(*thread-hash* . (random (expt 2 32)))
+      bordeaux-threads:*default-special-bindings*)
+
+(defun thread-hash ()
+  #+sbcl (sb-kernel:get-lisp-obj-address (bt:current-thread))
+  #-sbcl *thread-hash*)
+
 ;; L150 add_if_mask(long, long, int, ConcurrentAutoTable)
 ;; This is a method in the CAT in the Java implementation, but here the
 ;; ConcurrentAutoTable (counter) is the object being acted upon.
@@ -109,7 +115,7 @@
   (declare (optimize speed))
   (let* ((cat (%counter-cat counter))
          (%t (%cat-table cat))
-         (idx (logand global-hash (1- (length %t))))
+         (idx (logand (thread-hash) (1- (length %t))))
          (old (the fixnum (svref %t idx)))
          ;; Try once quickly
          (ok (cas (svref %t idx) (logand old (lognot mask)) (+ old x))))

@@ -20,5 +20,6 @@
                (:file "hashtable")
                (:file "documentation"))
   :depends-on (:atomics
+               :bordeaux-threads
                :documentation-utils)
   :in-order-to ((asdf:test-op (asdf:test-op :luckless-test))))
