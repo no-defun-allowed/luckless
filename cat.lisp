@@ -97,15 +97,10 @@
 (defun counter-value~ (counter)
   (cat-sum~ (%counter-cat counter) 0))
 
-(declaim (inline thread-hash))
-
+(declaim ((unsigned-byte 32) *thread-hash*))
 (defvar *thread-hash* (random (expt 2 32)))
 (push `(*thread-hash* . (random (expt 2 32)))
       bordeaux-threads:*default-special-bindings*)
-
-(defun thread-hash ()
-  #+sbcl (sb-kernel:get-lisp-obj-address (bt:current-thread))
-  #-sbcl *thread-hash*)
 
 ;; L150 add_if_mask(long, long, int, ConcurrentAutoTable)
 ;; This is a method in the CAT in the Java implementation, but here the
@@ -115,7 +110,7 @@
   (declare (optimize speed))
   (let* ((cat (%counter-cat counter))
          (%t (%cat-table cat))
-         (idx (logand (thread-hash) (1- (length %t))))
+         (idx (logand *thread-hash* (1- (length %t))))
          (old (the fixnum (svref %t idx)))
          ;; Try once quickly
          (ok (cas (svref %t idx) (logand old (lognot mask)) (+ old x))))
@@ -138,8 +133,8 @@
         (when (<= (* 1024 1024) (length %t)) (fail))
         ;; We are contending too much, increase the size in hopes it'll help
         (let ((r (%cat-resizers cat))
-              (newbytes (ash (ash (length %t) 1) 4)))
-          (declare (type fixnum r newbytes))
+              (newbytes (ash (length %t) 5)))
+          (declare ((and fixnum unsigned-byte) r newbytes))
           (loop while (not (cas (%cat-resizers cat) r (+ r newbytes)))
                 do (setf r (%cat-resizers cat)))
           (incf r newbytes)
@@ -148,7 +143,7 @@
             (fail))
           ;; Did we try to allocate too often already?
           (when (/= 0 (ash r -17))
-            (sleep (/ (ash r -17) 1000))
+            (sleep (floor (ash r -17) 1000))
             (unless (eql cat (%counter-cat counter))
               (fail)))
           ;; Try to extend the CAT once, if it fails another thread

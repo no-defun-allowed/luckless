@@ -516,7 +516,7 @@
   (assert (eq chm (chm oldkvs)))
   (let* ((newkvs (%chm-newkvs chm))
          (oldlen (len oldkvs))
-         (min-copy-work (min oldlen 1024))
+         (min-copy-work (min oldlen 16384))
          (panic-start -1)
          (copy-idx -9999))
     (declare (type fixnum oldlen min-copy-work copy-idx panic-start))
@@ -588,6 +588,7 @@
 ;; Copy one slot into the new table,
 ;; returns true if we are sure that the new table has a value.
 ;; L1023 boolean copy_slot(NonBlockingHashMap, int, Object[], Object[])
+(declaim (inline copy-slot))
 (defun copy-slot (table idx oldkvs newkvs)
   (declare (type castable table))
   (declare (type fixnum idx))
