@@ -20,7 +20,7 @@
     `(prime 'prime)))
 
 (defconstant max-spin 2)
-(defconstant reprobe-limit 200)
+(defconstant reprobe-limit 20)
 (defconstant min-size-log 3)
 (defconstant min-size (ash 1 min-size-log))
 (defconstant no-match-old 'no-match-old)
@@ -33,22 +33,9 @@
          (inline rehash))
 
 ;; L71, int hash(Object)
-;; REHASH seems to make hashes less unique, from some experimentation.
+;; The "spreading" done by the old REHASH seems to make things worse
+;; on SBCL. It might have improved Java hashes, but this ain't Java.
 (defun rehash (h) h)
-#+(or)
-(defun rehash (h)
-  "Spread bits of the hash H around."
-  (declare (optimize speed))
-  (declare (type (integer 0) h))
-  (let ((h (logand h most-positive-fixnum)))
-    (declare (type (unsigned-byte 64) h))
-    (incf h (logior (logand most-positive-fixnum (ash h 15)) #xffffcd7d))
-    (setf h (logior h (ash h -10)))
-    (incf h (logand most-positive-fixnum (ash h 3)))
-    (setf h (logior h (ash h -6)))
-    (incf h (logand most-positive-fixnum (+ (ash h 2) (ash h 14))))
-    (setf h (logior h (ash h -16)))
-    (logand h most-positive-fixnum)))
 
 (declaim (inline reprobe-limit))
 (defun reprobe-limit (len)
