@@ -20,8 +20,8 @@
     `(prime 'prime)))
 
 (defconstant max-spin 2)
-(defconstant reprobe-limit 20)
-(defconstant min-size-log 3)
+(defconstant reprobe-limit 50)
+(defconstant min-size-log 8)
 (defconstant min-size (ash 1 min-size-log))
 (defconstant no-match-old 'no-match-old)
 (defconstant match-any 'match-any)
@@ -562,10 +562,15 @@
   (let ((oldlen (len oldkvs))
         (copy-done (%chm-copy-done chm)))
     (assert (<= (+ copy-done work-done) oldlen))
-    (when (< 0 work-done)
+    (when (plusp work-done)
       (loop until (cas (%chm-copy-done chm) copy-done (+ copy-done work-done))
             do (setf copy-done (%chm-copy-done chm))
-               (assert (<= (+ copy-done work-done) oldlen))))
+               (assert (<= (+ copy-done work-done) oldlen)))
+      #+report-resize
+      (when (/= (floor (* 10 copy-done) oldlen)
+                (floor (* 10 (+ copy-done work-done)) oldlen))
+        (format t "~&copied ~3d%"
+                (floor (* 100 copy-done) oldlen))))
     ;; Check for copy being completely done and promote
     (when (and (= (+ copy-done work-done) oldlen)
                (eq (%castable-kvs table) oldkvs)

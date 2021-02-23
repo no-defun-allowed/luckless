@@ -30,7 +30,7 @@
 
 (defmethod print-object ((list caslist) stream)
   (print-unreadable-object (list stream :type T :identity T)
-    (mapc* (lambda (value) (format stream "~a " value)) list)))
+    (mapc (lambda (value) (format stream "~a " value)) list)))
 
 (defun caslist (&rest values)
   (declare (optimize speed))
