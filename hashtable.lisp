@@ -22,6 +22,8 @@
 (defconstant max-spin 2)
 (defconstant reprobe-limit 50)
 (defconstant min-size-log 8)
+(defconstant reprobe-limit 10)
+(defconstant min-size-log 3)
 (defconstant min-size (ash 1 min-size-log))
 (defconstant no-match-old 'no-match-old)
 (defconstant match-any 'match-any)
@@ -319,14 +321,14 @@
         (values value T))))
 
 ;; L555 Object putIfMatch(NonBlockingHashMap, Object[], Object, Object, Object)
-(defun %put-if-match (table kvs key put exp)
+(defun %put-if-match (table kvs key put exp &optional (fullhash (hash table key)))
   (declare (type castable table))
   (declare (type simple-vector kvs))
+  (declare (type fixnum fullhash))
   (declare (optimize speed))
   (assert (and (not (prime-p put))
                (not (prime-p exp))))
-  (let* ((fullhash (hash table key))
-         (len (len kvs))
+  (let* ((len (len kvs))
          (chm (chm kvs))
          (hashes (hashes kvs))
          (test (%castable-test table))
@@ -358,7 +360,7 @@
           (when (keyeq k key hashes idx fullhash test)
             (return))
           ;; If we exceed reprobes, start resizing
-          (when (<= (reprobe-limit len) (incf reprobe-count))
+          (when (>= (incf reprobe-count) (reprobe-limit len))
             (setf newkvs (resize chm table kvs))
             (unless (eq exp NO-VALUE) (help-copy table newkvs))
             (return-from %put-if-match
@@ -417,8 +419,8 @@
   (let* ((topkvs (%castable-kvs table))
          (topchm (chm topkvs)))
     (unless (null (%chm-newkvs topchm))
-      (%help-copy topchm table topkvs NIL))
-    helper))
+      (%help-copy topchm table topkvs NIL)))
+    helper)
 
 ;; L794 Object[] resize(NonBlockingHashMap, Object[])
 (defun resize (chm table kvs)
@@ -505,7 +507,9 @@
          (oldlen (len oldkvs))
          (min-copy-work (min oldlen 16384))
          (panic-start -1)
-         (copy-idx 0))
+         (copy-idx 0)
+         #+report-resize
+         (start-time (get-internal-real-time)))
     (declare (type fixnum oldlen min-copy-work panic-start)
              ((and unsigned-byte fixnum) copy-idx))
     (assert (not (null newkvs)))
@@ -534,7 +538,11 @@
             (when (and (not copy-all) (= -1 panic-start))
               (return-from %help-copy))))
     ;; Promote again in case we race on end of copy
-    (copy-check-and-promote chm table oldkvs 0)))
+    (copy-check-and-promote chm table oldkvs 0)
+    #+report-resize
+    (format t "~&took ~$ seconds copying"
+            (/ (- (get-internal-real-time) start-time)
+               internal-time-units-per-second))))
 
 ;; Copy the slot and check that we have done so successfully.
 ;; L970 Object[] copy_slot_and_check(NonBlockingHashMap, Object[], int, Object)
@@ -611,9 +619,10 @@
         (return-from copy-slot NIL))
       ;; Finally do the actual copy, but only if we would write into
       ;; a null. Otherwise, someone else already copied.
-      (let ((old-unboxed (prime-value oldval)))
+      (let ((old-unboxed (prime-value oldval))
+            (hash (aref (hashes oldkvs) idx)))
         (assert (not (eq old-unboxed TOMBSTONE)))
-        (prog1 (eq NO-VALUE (%put-if-match table newkvs key old-unboxed NO-VALUE))
+        (prog1 (eq NO-VALUE (%put-if-match table newkvs key old-unboxed NO-VALUE hash))
           ;; Now that the copy is done, we can stub out the old key completely.
           (loop until (cas-val oldkvs idx oldval TOMBPRIME)
                 do (setf oldval (val oldkvs idx))))))))
