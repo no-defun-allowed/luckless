@@ -22,8 +22,6 @@
 (defconstant max-spin 2)
 (defconstant reprobe-limit 50)
 (defconstant min-size-log 8)
-(defconstant reprobe-limit 10)
-(defconstant min-size-log 3)
 (defconstant min-size (ash 1 min-size-log))
 (defconstant no-match-old 'no-match-old)
 (defconstant match-any 'match-any)
@@ -321,16 +319,16 @@
         (values value T))))
 
 ;; L555 Object putIfMatch(NonBlockingHashMap, Object[], Object, Object, Object)
-(defun %put-if-match (table kvs key put exp &optional (fullhash (hash table key)))
+(defun %put-if-match (table kvs key put exp)
   (declare (type castable table))
   (declare (type simple-vector kvs))
-  (declare (type fixnum fullhash))
   (declare (optimize speed))
   (assert (and (not (prime-p put))
                (not (prime-p exp))))
   (let* ((len (len kvs))
          (chm (chm kvs))
          (hashes (hashes kvs))
+         (fullhash (hash table key))
          (test (%castable-test table))
          (idx (logand fullhash (1- len)))
          (reprobe-count 0)
@@ -390,7 +388,8 @@
                          (eq v TOMBSTONE)
                          (eq v NO-VALUE))
                      (not (and (eq v NO-VALUE) (eq exp TOMBSTONE)))
-                     (or (eq exp NO-VALUE) (not (funcall test exp v))))
+                     ;; FIXME: Should we use the same test for key & value?
+                     (or (eq exp NO-VALUE) (not (eq exp v))))
             (return v))
           ;; Perform the change
           (when (cas-val kvs idx v put)
@@ -619,10 +618,9 @@
         (return-from copy-slot NIL))
       ;; Finally do the actual copy, but only if we would write into
       ;; a null. Otherwise, someone else already copied.
-      (let ((old-unboxed (prime-value oldval))
-            (hash (aref (hashes oldkvs) idx)))
+      (let ((old-unboxed (prime-value oldval)))
         (assert (not (eq old-unboxed TOMBSTONE)))
-        (prog1 (eq NO-VALUE (%put-if-match table newkvs key old-unboxed NO-VALUE hash))
+        (prog1 (eq NO-VALUE (%put-if-match table newkvs key old-unboxed NO-VALUE))
           ;; Now that the copy is done, we can stub out the old key completely.
           (loop until (cas-val oldkvs idx oldval TOMBPRIME)
                 do (setf oldval (val oldkvs idx))))))))
