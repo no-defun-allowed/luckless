@@ -440,14 +440,15 @@
       ;; Heuristic for new size
       (when (<= (ash oldlen -2) sz)
         (setf newsz (ash oldlen 1))
+        #+cliff-heuristics
         (when (<= sz (ash oldlen -1))
           (setf newsz (ash oldlen 2))))
       ;; Much denser table with more reprobes
-      #+(or)
       (when (<= (ash oldlen -1) sz)
         (setf newsz (ash oldlen 1)))
       ;; Was the last resize recent? If so, double again
       ;; to accommodate tables with lots of inserts at the moment.
+      #+cliff-heuristics
       (let ((tm (get-internal-real-time)))
         (when (and (<= newsz oldlen)
                    ;; If we resized less than a second ago
@@ -563,7 +564,7 @@
 (defun copy-check-and-promote (chm table oldkvs work-done)
   (declare (type chm chm))
   (declare (type castable table))
-  (declare (type simple-array oldkvs))
+  (declare (type simple-vector oldkvs))
   (declare (type fixnum work-done))
   (declare (optimize speed))
   (assert (eq chm (chm oldkvs)))
@@ -592,7 +593,7 @@
 (defun copy-slot (table idx oldkvs newkvs)
   (declare (type castable table))
   (declare (type fixnum idx))
-  (declare (type simple-array oldkvs newkvs))
+  (declare (type simple-vector oldkvs newkvs))
   (declare (optimize speed))
   ;; First tombstone the key blindly.
   (let (key)
